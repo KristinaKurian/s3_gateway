@@ -133,7 +133,7 @@ bool S3Client::TryGetObjectContent(const std::string& bucket,
 
     if (error_type == Aws::S3::S3Errors::NO_SUCH_KEY ||
         error_type == Aws::S3::S3Errors::RESOURCE_NOT_FOUND) {
-      return std::nullopt;
+      return false;
     }
 
     throw std::runtime_error(
