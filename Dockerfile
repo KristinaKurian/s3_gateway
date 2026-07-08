@@ -1,4 +1,4 @@
-FROM ubuntu:24.04 AS builder
+FROM ubuntu:22.04 AS builder
 
 RUN apt-get update && apt-get install -y \
     build-essential cmake git curl zip unzip tar pkg-config \
@@ -30,7 +30,7 @@ RUN cmake -B build \
     -DCMAKE_BUILD_TYPE=Release && \
     cmake --build build -j$(nproc)
 
-FROM ubuntu:24.04
+FROM ubuntu:22.04
 RUN apt-get update && apt-get install -y libcurl4 ca-certificates && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/build/s3_gateway /usr/local/bin/s3_gateway

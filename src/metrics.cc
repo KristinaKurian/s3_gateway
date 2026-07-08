@@ -1,5 +1,6 @@
 #include "metrics.h"
 
+#include <algorithm>
 #include <chrono>
 #include <ctime>
 #include <iomanip>
@@ -11,43 +12,41 @@ namespace s3_gateway {
 
 namespace {
 
-std::chrono::system_clock::time_point ParseIso8601(
+std::optional<std::chrono::system_clock::time_point> ParseIso8601(
     const std::string& timestamp) {
   if (timestamp.size() < 19) {
-    return std::chrono::system_clock::time_point{};
+    return std::nullopt;
   }
 
   std::tm tm{};
   std::istringstream stream(timestamp.substr(0, 19));
   stream >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%S");
+
   if (stream.fail()) {
-    return std::chrono::system_clock::time_point{};
+    return std::nullopt;
   }
 
-#if defined(_WIN32)
-  const std::time_t time = _mkgmtime(&tm);
-#else
-  const std::time_t time = timegm(&tm);
-#endif
-  if (time == static_cast<std::time_t>(-1)) {
-    return std::chrono::system_clock::time_point{};
+  using namespace std::chrono;
+
+  const year y{tm.tm_year + 1900};
+  const month m{static_cast<unsigned>(tm.tm_mon + 1)};
+  const day d{static_cast<unsigned>(tm.tm_mday)};
+
+  const year_month_day ymd{y / m / d};
+
+  if (!ymd.ok()) {
+    return std::nullopt;
   }
 
-  return std::chrono::system_clock::from_time_t(time);
+  const auto time =
+      sys_days{ymd}
+      + hours{tm.tm_hour}
+      + minutes{tm.tm_min}
+      + seconds{tm.tm_sec};
+
+  return time_point_cast<std::chrono::system_clock::duration>(time);
 }
-
-bool IsWithin(const std::string& timestamp,
-              std::chrono::system_clock::duration window) {
-  const auto uploaded_at = ParseIso8601(timestamp);
-  if (uploaded_at == std::chrono::system_clock::time_point{}) {
-    return false;
-  }
-
-  const auto now = std::chrono::system_clock::now();
-  return uploaded_at <= now && uploaded_at >= now - window;
 }
-
-}  // namespace
 
 Metrics::Metrics()
     : registry_(std::make_shared<prometheus::Registry>()),
@@ -85,13 +84,19 @@ void Metrics::ObserveFiles(const std::vector<FileEntry>& entries) {
   std::unordered_map<std::string, int> counts;
   int week = 0;
   int month = 0;
+  const auto now = std::chrono::system_clock::now();
 
   for (const auto& entry : entries) {
     ++counts[entry.bucket_name];
-    if (IsWithin(entry.last_modified, std::chrono::hours(24 * 7))) {
+    const auto modified_at = ParseIso8601(entry.last_modified);
+    if (!modified_at) {
+      continue;
+    }
+    if (*modified_at <= now && *modified_at >= now - std::chrono::days{7}) {
       ++week;
     }
-    if (IsWithin(entry.last_modified, std::chrono::hours(24 * 31))) {
+
+    if (*modified_at <= now && *modified_at >= now - std::chrono::days{31}) {
       ++month;
     }
   }
@@ -114,7 +119,9 @@ void Metrics::ObserveFiles(const std::vector<FileEntry>& entries) {
   uploads_per_month_.Set(month);
 }
 
-void Metrics::SetDuplicateFiles(int count) { duplicate_files_.Set(count); }
+void Metrics::SetDuplicateFiles(int count) { 
+  duplicate_files_.Set(std::max(0, count));
+}
 
 std::string Metrics::Render() const {
   std::ostringstream output;

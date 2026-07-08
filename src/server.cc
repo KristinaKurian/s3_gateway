@@ -34,11 +34,6 @@ void Server::RegisterRoutes() {
               HandleStatus(req, res);
             });
 
-  http_.Get("/readines",
-            [this](const httplib::Request& req, httplib::Response& res) {
-              HandleReadiness(req, res);
-            });
-
   http_.Get("/readiness",
             [this](const httplib::Request& req, httplib::Response& res) {
               HandleReadiness(req, res);

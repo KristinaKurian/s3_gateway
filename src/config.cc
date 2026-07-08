@@ -1,6 +1,7 @@
 #include "config.h"
 
 #include <cstdlib>
+#include <charconv>
 #include <sstream>
 #include <stdexcept>
 
@@ -16,6 +17,21 @@ std::string GetEnvOr(const char* name, const std::string& default_value) {
   return value;
 }
 
+uint16_t ParsePort(const std::string& value) {
+  int port = 0;
+
+  const auto* begin = value.data();
+  const auto* end = value.data() + value.size();
+
+  auto [ptr, ec] = std::from_chars(begin, end, port);
+
+  if (ec != std::errc{} || ptr != end || port <= 0 || port > 65535) {
+    throw std::runtime_error("PORT must be an integer in range 1..65535");
+  }
+
+  return static_cast<uint16_t>(port);
+}
+
 }  // namespace
 
 Config Config::FromEnv() {
@@ -24,12 +40,8 @@ Config Config::FromEnv() {
   config.s3_endpoint = GetEnvOr("S3_ENDPOINT", "");
   config.host = GetEnvOr("HOST", "0.0.0.0");
 
-  std::string port_str = GetEnvOr("PORT", "8080");
-  int port = std::stoi(port_str);
-  if (port <= 0 || port > 65535) {
-    throw std::runtime_error("PORT must be in range 1..65535");
-  }
-  config.port = static_cast<uint16_t>(std::stoi(port_str));
+  int port = ParsePort(GetEnvOr("PORT", "8080"));
+  config.port = static_cast<uint16_t>(port);
 
   std::string buckets_str = GetEnvOr("BUCKETS", "");
   if (!buckets_str.empty()) {
@@ -47,13 +59,9 @@ Config Config::FromEnv() {
       bucket.name = parts[0];
       if (parts.size() > 1) {
         bucket.manifest_key = parts[1];
-      } else {
-        bucket.manifest_key = ".parparchik/files.json";
       }
       if (parts.size() > 2 && parts[2] == "public") {
         bucket.is_public = true;
-      } else {
-        bucket.is_public = false;
       }
       config.buckets.push_back(bucket);
     }
