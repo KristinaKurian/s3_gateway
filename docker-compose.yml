@@ -38,7 +38,7 @@ services:
     environment:
       PUBLIC_BUCKET: public-bucket
       PRIVATE_BUCKET: private-bucket
-      REGISTRY_MANIFEST_KEY: .parparchik/files.json
+      REGISTRY_MANIFEST_KEY: .gateway/files.json
       S3_ENDPOINT: minio:9000
       S3_EXTERNAL_ENDPOINT: "localhost:9002"
       AWS_REGION: us-east-1

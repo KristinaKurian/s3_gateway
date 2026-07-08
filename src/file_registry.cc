@@ -145,18 +145,20 @@ std::vector<FileEntry> FileRegistry::ListAll() const {
 
 std::vector<FileEntry> FileRegistry::ListByBucket(
     const std::string& bucket) const {
-  std::lock_guard lock(mu_);
-  std::vector<FileEntry> result;
-  for (const auto& [_, entry] : entries_) {
-    if (entry.bucket_name == bucket) {
-      result.push_back(entry);
+  {
+    std::lock_guard lock(mu_);
+    std::vector<FileEntry> result;
+    for (const auto& [_, entry] : entries_) {
+      if (entry.bucket_name == bucket) {
+        result.push_back(entry);
+      }
     }
+    std::sort(result.begin(), result.end(),
+              [](const FileEntry& lhs, const FileEntry& rhs) {
+                return lhs.key < rhs.key;
+              });
+    return result;
   }
-  std::sort(result.begin(), result.end(),
-            [](const FileEntry& lhs, const FileEntry& rhs) {
-              return lhs.key < rhs.key;
-            });
-  return result;
 }
 
 nlohmann::json FileRegistry::ManifestForBucket(

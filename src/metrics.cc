@@ -4,6 +4,7 @@
 #include <chrono>
 #include <ctime>
 #include <iomanip>
+#include <optional>
 #include <sstream>
 
 #include <prometheus/text_serializer.h>
@@ -11,6 +12,9 @@
 namespace s3_gateway {
 
 namespace {
+
+constexpr auto kWeekWindow = std::chrono::days{7};
+constexpr auto kMonthWindow = std::chrono::days{31};
 
 std::optional<std::chrono::system_clock::time_point> ParseIso8601(
     const std::string& timestamp) {
@@ -20,6 +24,9 @@ std::optional<std::chrono::system_clock::time_point> ParseIso8601(
 
   std::tm tm{};
   std::istringstream stream(timestamp.substr(0, 19));
+  if (timestamp.size() > 19 && timestamp[19] != 'Z') {
+    return std::nullopt;
+  }
   stream >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%S");
 
   if (stream.fail()) {
@@ -81,46 +88,52 @@ Metrics::Metrics()
               .Add({})) {}
 
 void Metrics::ObserveFiles(const std::vector<FileEntry>& entries) {
-  std::unordered_map<std::string, int> counts;
-  int week = 0;
-  int month = 0;
-  const auto now = std::chrono::system_clock::now();
+  {
+    std::lock_guard lock(mu_);
+    std::unordered_map<std::string, int> counts;
+    int week = 0;
+    int month = 0;
+    const auto now = std::chrono::system_clock::now();
 
-  for (const auto& entry : entries) {
-    ++counts[entry.bucket_name];
-    const auto modified_at = ParseIso8601(entry.last_modified);
-    if (!modified_at) {
-      continue;
-    }
-    if (*modified_at <= now && *modified_at >= now - std::chrono::days{7}) {
-      ++week;
+    for (const auto& entry : entries) {
+      ++counts[entry.bucket_name];
+      const auto modified_at = ParseIso8601(entry.last_modified);
+      if (!modified_at) {
+        continue;
+      }
+      if (*modified_at <= now && *modified_at >= now - kWeekWindow) {
+        ++week;
+      }
+
+      if (*modified_at <= now && *modified_at >= now - kMonthWindow) {
+        ++month;
+      }
     }
 
-    if (*modified_at <= now && *modified_at >= now - std::chrono::days{31}) {
-      ++month;
+    for (auto& [bucket, gauge] : volume_files_gauges_) {
+      gauge->Set(0);
     }
+    for (const auto& [bucket, count] : counts) {
+      auto it = volume_files_gauges_.find(bucket);
+      if (it == volume_files_gauges_.end()) {
+        auto& gauge = volume_files_family_.Add({{"bucket", bucket}});
+        volume_files_gauges_[bucket] = &gauge;
+        gauge.Set(count);
+      } else {
+        it->second->Set(count);
+      }
+    }
+
+    uploads_per_week_.Set(week);
+    uploads_per_month_.Set(month);
   }
-
-  for (auto& [bucket, gauge] : volume_files_gauges_) {
-    gauge->Set(0);
-  }
-  for (const auto& [bucket, count] : counts) {
-    auto it = volume_files_gauges_.find(bucket);
-    if (it == volume_files_gauges_.end()) {
-      auto& gauge = volume_files_family_.Add({{"volume", bucket}});
-      volume_files_gauges_[bucket] = &gauge;
-      gauge.Set(count);
-    } else {
-      it->second->Set(count);
-    }
-  }
-
-  uploads_per_week_.Set(week);
-  uploads_per_month_.Set(month);
 }
 
-void Metrics::SetDuplicateFiles(int count) { 
-  duplicate_files_.Set(std::max(0, count));
+void Metrics::SetDuplicateFiles(int count) {
+  {
+    std::lock_guard lock(mu_);
+    duplicate_files_.Set(std::max(0, count));
+  }
 }
 
 std::string Metrics::Render() const {

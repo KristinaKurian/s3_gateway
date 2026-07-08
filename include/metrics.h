@@ -28,6 +28,7 @@ class Metrics {
   prometheus::Gauge& duplicate_files_;
   prometheus::Gauge& uploads_per_week_;
   prometheus::Gauge& uploads_per_month_;
+  mutable std::mutex mu_;
 };
 
 }  // namespace s3_gateway

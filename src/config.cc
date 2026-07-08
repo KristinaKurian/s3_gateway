@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include <algorithm>
+#include <unordered_set>
 #include <cstdlib>
 #include <charconv>
 #include <sstream>
@@ -15,6 +17,16 @@ std::string GetEnvOr(const char* name, const std::string& default_value) {
     return default_value;
   }
   return value;
+}
+
+std::string Trim(const std::string& value) {
+  const auto begin = value.find_first_not_of(" \t\n\r");
+  if (begin == std::string::npos) {
+    return "";
+  }
+
+  const auto end = value.find_last_not_of(" \t\n\r");
+  return value.substr(begin, end - begin + 1);
 }
 
 uint16_t ParsePort(const std::string& value) {
@@ -33,6 +45,31 @@ uint16_t ParsePort(const std::string& value) {
 }
 
 }  // namespace
+
+const BucketConfig* Config::FindBucket(const std::string& bucket_name) const {
+  const auto it = std::find_if(
+      buckets.begin(),
+      buckets.end(),
+      [&bucket_name](const BucketConfig& bucket) {
+        return bucket.name == bucket_name;
+      });
+
+  if (it == buckets.end()) {
+    return nullptr;
+  }
+
+  return &(*it);
+}
+
+bool Config::IsBucketPublic(const std::string& bucket_name) const {
+    const BucketConfig* bucket = FindBucket(bucket_name);
+
+    if (bucket == nullptr) {
+      return false;
+    }
+
+    return bucket->is_public;
+}
 
 Config Config::FromEnv() {
   Config config;
@@ -56,9 +93,15 @@ Config Config::FromEnv() {
         parts.push_back(part);
       }
       if (parts.empty()) continue;
-      bucket.name = parts[0];
+      bucket.name = Trim(parts[0]);
+      if (bucket.name.empty()) {
+        throw std::runtime_error("Bucket name in BUCKETS must not be empty");
+      }
       if (parts.size() > 1) {
-        bucket.manifest_key = parts[1];
+        const auto manifest_key = Trim(parts[1]);
+        if (!manifest_key.empty()) {
+          bucket.manifest_key = manifest_key;
+        }
       }
       if (parts.size() > 2 && parts[2] == "public") {
         bucket.is_public = true;
@@ -67,7 +110,7 @@ Config Config::FromEnv() {
     }
   } else {
     // Backward compatibility
-    std::string default_manifest = ".parparchik/files.json";
+    std::string default_manifest = kDefaultManifestKey;
     const char* pub = std::getenv("PUBLIC_BUCKET");
     const char* priv = std::getenv("PRIVATE_BUCKET");
     if (!pub || pub[0] == '\0' || !priv || priv[0] == '\0') {

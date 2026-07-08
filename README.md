@@ -17,7 +17,7 @@ MinIO console is at http://localhost:9001 (user: `minioadmin`, password: `minioa
 | Method | Endpoint                   | Description                                        |
 |--------|----------------------------|----------------------------------------------------|
 | GET    | `/status`                  | Service health, bucket names, file count           |
-| GET    | `/readines`                | Kubernetes readiness probe                         |
+| GET    | `/readiness`               | Kubernetes readiness probe                         |
 | GET    | `/healthcheck`             | Kubernetes liveness probe                          |
 | GET    | `/list`                    | All registered files with bucket type and route    |
 | GET    | `/update?filename=<name>`  | Sync and return current location of a file         |

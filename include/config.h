@@ -7,9 +7,11 @@
 
 namespace s3_gateway {
 
+constexpr const char* kDefaultManifestKey = ".gateway/files.json";
+
 struct BucketConfig {
   std::string name;
-  std::string manifest_key = ".parparchik/files.json";
+  std::string manifest_key = kDefaultManifestKey;
   bool is_public = false;
 };
 
@@ -21,14 +23,8 @@ struct Config {
   uint16_t port = 8080;
 
   bool HasCustomEndpoint() const { return !s3_endpoint.empty(); }
-  bool IsBucketPublic(const std::string& bucket_name) const {
-    for (const auto& bucket : buckets) {
-      if (bucket.name == bucket_name) {
-        return bucket.is_public;
-      }
-    }
-    return false;
-  }
+  const BucketConfig* FindBucket(const std::string& bucket_name) const;
+  bool IsBucketPublic(const std::string& bucket_name) const;
 
   static Config FromEnv();
 };
