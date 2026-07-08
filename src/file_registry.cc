@@ -66,8 +66,10 @@ void FileRegistry::LoadManifests(
     }
   }
 
-  std::lock_guard lock(mu_);
-  entries_ = std::move(loaded);
+  {
+    std::lock_guard lock(mu_);
+    entries_ = std::move(loaded);
+  }
 }
 
 void FileRegistry::RegisterFile(const std::string& key,
@@ -80,28 +82,31 @@ void FileRegistry::RegisterFile(const std::string& key,
       .size = size,
       .last_modified = last_modified,
   };
-
-  std::lock_guard lock(mu_);
-  auto existing = entries_.find(key);
-  if (existing != entries_.end()) {
-    int existing_pri = BucketPriority(existing->second.bucket_name);
-    int new_pri = BucketPriority(bucket);
-    if (existing_pri < new_pri) {
-      return;
+  {
+    std::lock_guard lock(mu_);
+    auto existing = entries_.find(key);
+    if (existing != entries_.end()) {
+      int existing_pri = BucketPriority(existing->second.bucket_name);
+      int new_pri = BucketPriority(bucket);
+      if (existing_pri < new_pri) {
+        return;
+      }
     }
+    entries_[key] = entry;
   }
-  entries_[key] = entry;
 }
 
 void FileRegistry::MoveToBucket(const std::string& key,
                                 const std::string& bucket) {
-  std::lock_guard lock(mu_);
-  auto it = entries_.find(key);
-  if (it == entries_.end()) {
-    return;
+  {
+    std::lock_guard lock(mu_);
+    auto it = entries_.find(key);
+    if (it == entries_.end()) {
+      return;
+    }
+    it->second.bucket_name = bucket;
+    it->second.route = MakeRoute(key, bucket);
   }
-  it->second.bucket_name = bucket;
-  it->second.route = MakeRoute(key, bucket);
 }
 
 void FileRegistry::Remove(const std::string& key) {
@@ -110,12 +115,14 @@ void FileRegistry::Remove(const std::string& key) {
 }
 
 std::optional<FileEntry> FileRegistry::Lookup(const std::string& key) const {
-  std::lock_guard lock(mu_);
-  auto it = entries_.find(key);
-  if (it == entries_.end()) {
-    return std::nullopt;
+  {
+    std::lock_guard lock(mu_);
+    auto it = entries_.find(key);
+    if (it == entries_.end()) {
+      return std::nullopt;
+    }
+    return it->second;
   }
-  return it->second;
 }
 
 std::optional<FileEntry> FileRegistry::LookupByRoute(
@@ -175,8 +182,10 @@ nlohmann::json FileRegistry::ManifestForBucket(
 }
 
 void FileRegistry::Clear() {
-  std::lock_guard lock(mu_);
-  entries_.clear();
+  {
+    std::lock_guard lock(mu_);
+    entries_.clear();
+  }
 }
 
 std::string FileRegistry::MakeRoute(const std::string& key,

@@ -82,7 +82,16 @@ std::optional<S3Object> S3Client::HeadObject(const std::string& bucket,
 
   auto outcome = client_.HeadObject(request);
   if (!outcome.IsSuccess()) {
-    return std::nullopt;
+    const auto error_type = outcome.GetError().GetErrorType();
+
+    if (error_type == Aws::S3::S3Errors::NO_SUCH_KEY ||
+        error_type == Aws::S3::S3Errors::RESOURCE_NOT_FOUND) {
+      return std::nullopt;
+    }
+
+    throw std::runtime_error(
+        "Failed to head object " + key + " from bucket " + bucket +
+        ": " + outcome.GetError().GetMessage());
   }
 
   return S3Object{
@@ -120,7 +129,16 @@ bool S3Client::TryGetObjectContent(const std::string& bucket,
 
   auto outcome = client_.GetObject(request);
   if (!outcome.IsSuccess()) {
-    return false;
+    const auto error_type = outcome.GetError().GetErrorType();
+
+    if (error_type == Aws::S3::S3Errors::NO_SUCH_KEY ||
+        error_type == Aws::S3::S3Errors::RESOURCE_NOT_FOUND) {
+      return std::nullopt;
+    }
+
+    throw std::runtime_error(
+        "Failed to head object " + key + " from bucket " + bucket +
+        ": " + outcome.GetError().GetMessage());
   }
 
   std::ostringstream oss;
